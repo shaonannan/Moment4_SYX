@@ -335,6 +335,7 @@ class Simulation(object):
         self.dt = dt
         self.tf = tf
         m_record = np.zeros((len(self.population_list),np.int(tf/dt)+10))
+        mu_record = np.zeros((len(self.population_list),np.int(tf/dt)+10))
         
         
         # initialize:
@@ -352,13 +353,14 @@ class Simulation(object):
             for p in self.population_list:
                 p.update()
                 m_record[ind_rec,counter] = p.curr_firing_rate
+                mu_record[ind_rec,counter] = p.v1
                 ind_rec += 1
                 
                 
             for c in self.connection_list:
                 c.update()
             counter +=1
-        return m_record
+        return m_record,mu_record
                 
  # Recurrent Connection
 class ConnectionDistribution(object):
@@ -446,6 +448,8 @@ class Connection(object):
         # initialize None and Initialize when simulation
         self.firing_rate = 0.0
         self.simulation = None
+        # long range
+        self.inmda = 0.0
         """
         be remained!
         1) flux_matrix and threshold_flux_matrix,
@@ -456,6 +460,7 @@ class Connection(object):
     def initialize(self):
         self.initialize_connection_distribution()
         self.initialize_firing_rate()
+        self.initialize_I_nmda()
     
     def initialize_connection_distribution(self):
         CD = ConnectionDistribution(self.post_population.edges,self.weights,self.probs)
@@ -466,9 +471,13 @@ class Connection(object):
         
     def initialize_firing_rate(self):
         self.firing_rate = self.pre_population.curr_firing_rate
+    # LONG RANGE 
+    def initialize_I_nmda(self):
+        self.inmda = self.pre_population.curr_Inmda
         
     def update(self):
         self.firing_rate = self.pre_population.curr_firing_rate
+        self.inmda       = self.pre_population.curr_Inmda
         # initialize_firing_rate
     def update_flux_matrix(self,flux_matrix,threshold_flux_matrix):
         self.flux_matrix = flux_matrix
@@ -484,6 +493,9 @@ class Connection(object):
     @property
     def curr_firing_rate(self):
         return self.firing_rate
+    @property
+    def curr_Inmda(self):
+        return self.inmda
     
 
         
@@ -504,6 +516,16 @@ class ExternalPopulation(object):
         self.dt = dt
         # additional data/parameters
         self.metadata = kwargs
+        self.inmda = 0.0
+        self.hnmda = 0.0
+        
+
+
+        # for long-range connections
+        self.tau_r = 0.002
+        self.tau_d = 0.108
+
+        self.v1 = 0.0
         
         
         # initialize in simulation
@@ -512,27 +534,58 @@ class ExternalPopulation(object):
         self.initialize_firing_rate()
     def update(self):
         self.update_firing_rate()
+        self.update_NMDA_midvar_syncurr()
+        # print 'Ext NMDA: ',self.curr_Inmda,' HNMDA: ',self.hnmda
         
     def initialize_firing_rate(self):
         # current time --> in platform
         self.curr_t = self.simulation.t
-        if self.curr_t > 0:
-            self.firing_rate = self.firing_rate_stream
-        else:
-            self.firing_rate = 0.0
+        
+        try:
+            self.firing_rate = self.firing_rate_stream[np.int(self.curr_t/self.dt)]
+        except:
+            self.firing_rate = 100.0
     def update_firing_rate(self):
         self.curr_t = self.simulation.t
-        if self.curr_t > 0:
+        
+        try:
+            self.firing_rate = self.firing_rate_stream[np.int(self.curr_t/self.dt)]
+        except:
+            self.firing_rate = 100.0
+        """
+        if self.curr_t >0.3:
             temp = 100+50*np.absolute(np.sin(40*self.curr_t))
-            self.firing_rate = self.firing_rate_stream
+            self.firing_rate = self.firing_rate_stream * 1.0
         else:
-            self.firing_rate = 0.0
+            self.firing_rate = self.firing_rate_stream * 1.0
+        """
+    # update own hNMDA and iNMDA, which only depends on curr_firing_rate 
+    # in another words, a-subpopulation's hNMDA & iNMDA only depend on itself
+    def update_NMDA_midvar_syncurr(self):
+        ownfr = self.curr_firing_rate
+        # parameters
+        deltat = self.dt
+        trise  = self.tau_r
+        tdamp  = self.tau_d
+
+        tr   = deltat/trise
+        etr  = np.exp(-tr)
+        td   = deltat/tdamp
+        etd  = np.exp(-td)
+        cst  = 1.0/(tdamp - trise)*(etd - etr) # trise/(tdamp - trise)*(etd - etr)
+
+        self.inmda = self.inmda * etd + self.hnmda * cst
+        self.hnmda = self.hnmda *etr + ownfr * self.dt # * trise 
+        print 'release NMDA: ',self.inmda
 
     @property
     def curr_firing_rate(self):
         curr_firing_rate = self.firing_rate
         return curr_firing_rate
-
+    @property
+    def curr_Inmda(self):
+        curr_Inmda = self.inmda
+        return curr_Inmda
     
 class RecurrentPopulation(object):
     """
@@ -555,7 +608,7 @@ class RecurrentPopulation(object):
         (self.v_min,self.v_max) = (v_min,v_max)
         self.dv = dv
         self.record = record
-        self.firing_rate = firing_rate
+        self.firing_rate = 0.0 # firing_rate
         self.update_method = update_method
         self.approx_order = approx_order
         self.tol = tol
@@ -577,6 +630,13 @@ class RecurrentPopulation(object):
         # simulation in identical platform
         self.simulation = None
 
+        # if we use active release NMDA synaptic signal
+        # once the sender(pre) population generated firing rate
+        # it had ability to automatically release NMDA-type slow conductance
+        # so it naturally has this property(without self.weights)
+        self.hnmda = 0.0
+        self.inmda = 0.0
+
         self.v1 = 0.0
         self.v2 = 0.0
         self.v3 = 0.0
@@ -590,8 +650,7 @@ class RecurrentPopulation(object):
 
         # for long-range connections
         self.tau_r = 0.002
-        self.tau_d = 0.020
-
+        self.tau_d = 0.108
         
     def initialize(self):
         """
@@ -621,24 +680,8 @@ class RecurrentPopulation(object):
         self.leak_flux_matrix = leak_flux_matrix
 
     def initialize_fpmusigv_dict(self):
-        self.total_fpmu_dict  = {}
+        self.total_fpmu_dict = {}
         self.total_fpsig_dict = {}
-        # self.tmp_HNMDA_dict = {}
-        self.total_HNMDA_dict = {}
-        # self.tmp_INMDA_dict = {}
-        self.total_INMDA_dict = {}
-
-        # extract parameters
-        deltat = self.dt
-        trise  = self.tau_r
-        tdamp  = self.tau_d
-
-        tr  = deltat/trise
-        etr = np.exp(-tr) 
-        td  = deltat/tdamp
-        etd = np.exp(-td)
-
-        cst = trise/(tdamp-trise)
         # identical for long-range connections
         for c in self.source_connection_list:
             if (c.conn_type =='ShortRange'):
@@ -657,38 +700,17 @@ class RecurrentPopulation(object):
                 try:
                     # tmp_nmda_h = self.tmp_HNMDA_dict.setdefault(c.connection_distribution,0)
                     # tmp_nmda_i = self.tmp_INMDA_dict.setdefault(c.connection_distribution,0)
-
-                    curr_nmda_h = self.total_HNMDA_dict.setdefault(c.connection_distribution,0)
-                    curr_nmda_i = self.total_INMDA_dict.setdefault(c.connection_distribution,0)
+                    curr_nmda_i = self.total_fpmu_dict.setdefault(c.connection_distribution,0)
                 except:
                     c.initialize_connection_distribution()
                     # then have name and signature
                     # tmp_nmda_h = self.tmp_HNMDA_dict.setdefault(c.connection_distribution,0)
                     # tmp_nmda_i = self.tmp_INMDA_dict.setdefault(c.connection_distribution,0)
 
-                    curr_nmda_h = self.total_HNMDA_dict.setdefault(c.connection_distribution,0)
-                    curr_nmda_i = self.total_INMDA_dict.setdefault(c.connection_distribution,0)
-                # NMDA has 2 different steps, one for internal variable and the other for Inmda
-                """
-                # rising time constant tau_r
-                c.tau_r, c.dt
-                tr = c.dt/c.tau_r
-                etr = np.exp(-tr)
-                c.tau_d, c.dt
-                td = c.dt/c.tau_r
-                etd = np.exp(-td)
-                cst = c.tau_r/(c.tau_d-c.tau_r)*(etd-etr)
+                    curr_nmda_i = self.total_fpmu_dict.setdefault(c.connection_distribution,0)
 
-                In = In * etd + cst * hn
-                Hn = Hn * etr
-                Hn = Hn + c.curr_firing_rate * c.nsyn * c.weights
-
-                """
-
-
-                self.total_INMDA_dict[c.connection_distribution] = curr_nmda_i + self.total_INMDA_dict[c.connection_distribution] * etd + self.total_HNMDA_dict[c.connection_distribution] * cst
-                self.total_HNMDA_dict[c.connection_distribution] = curr_nmda_h + self.total_HNMDA_dict[c.connection_distribution] * etr + c.curr_firing_rate * c.nsyn * c.weights * self.tau_r
-
+                self.total_fpmu_dict[c.connection_distribution] = curr_nmda_i + c.curr_Inmda *  c.nsyn * c.weights
+                # no contribution to sigma
             
         # summation
         self.total_fp_vslave = 0.0
@@ -699,14 +721,6 @@ class RecurrentPopulation(object):
             except:
                 key.initialize()              
                 self.total_fp_vslave += val
-        # adding NMDA items
-        for key,val in self.total_INMDA_dict.items():
-            try:
-                self.total_fp_vslave += val
-            except:
-                key.initialize()
-                self.total_fp_vslave += val
-
         self.total_fp_vslave  = self.total_fp_vslave * self.tau_m
                 
         # summation
@@ -718,9 +732,6 @@ class RecurrentPopulation(object):
                 key.initialize()
                 self.total_fp_sigv += val
         self.total_fp_sigv  = self.total_fp_sigv * self.tau_m
-        """
-        Inmda has no effect on variance sigma_voltage
-        """
 
     def initialize_prob(self):
         # initialize voltage-distribution
@@ -767,7 +778,11 @@ class RecurrentPopulation(object):
         self.La0 = La0
         self.fin = fin
 
-    # contain short-range input and long-range input
+
+    # also combine short-range and long-range input
+    # short-range input relates to real firing rate of pre-population
+    # while long-range input relates to slow-changed NMDA-type synaptic input
+    # both have no relationship with weights!
     def initialize_total_input_dict(self):
         self.total_inputsr_dict = {}
         for c in self.source_connection_list:
@@ -792,7 +807,7 @@ class RecurrentPopulation(object):
                     c.initialize_connection_distribution()
                     # then have name and signature
                     curr_input = self.total_inputlr_dict.setdefault(c.connection_distribution,0)
-                self.total_inputlr_dict[c.connection_distribution] = curr_input + c.curr_firing_rate * c.nsyn
+                self.total_inputlr_dict[c.connection_distribution] = curr_input + c.curr_Inmda * c.nsyn
                 # self.total_input_dict[c.connection_distribution] = curr_input + c.pre_population.curr_firing_rate * c.nsyn
             
     def update_total_flux_matrix(self):
@@ -828,7 +843,9 @@ class RecurrentPopulation(object):
             self.total_inputlr_dict[curr_CD] = 0.0
         for c in self.source_connection_list:
             if (c.conn_type == 'LongRange'):
-                self.total_inputlr_dict[c.connection_distribution] += c.curr_firing_rate * c.nsyn
+                self.total_inputlr_dict[c.connection_distribution] += c.curr_Inmda * c.nsyn
+                # for long-range connection, input dictionary represents slow-changed NMDA-type synaptic input 
+                # both short-/long-range input dictionary do not relate to c.weights
 
     def update_prob(self):
         J = self.update_total_flux_matrix()
@@ -851,23 +868,32 @@ class RecurrentPopulation(object):
         flux_vector = reduce(np.add,[key.threshold_flux_vector * val for key,val in
                                     self.total_input_dict.items()])
         self.firing_rate = np.dot(flux_vector,self.rhov)
+
+    # update own hNMDA and iNMDA, which only depends on curr_firing_rate 
+    # in another words, a-subpopulation's hNMDA & iNMDA only depend on itself
+    def update_NMDA_midvar_syncurr(self):
+        ownfr = self.curr_firing_rate
+        # parameters
+        deltat = self.dt
+        trise  = self.tau_r
+        tdamp  = self.tau_d
+
+        tr   = deltat/trise
+        etr  = np.exp(-tr)
+        td   = deltat/tdamp
+        etd  = np.exp(-td)
+        cst  = 1.0/(tdamp - trise)*(etd - etr) # trise/(tdamp - trise)*(etd - etr)
+
+        self.inmda = self.inmda * etd + self.hnmda * cst
+        self.hnmda = self.hnmda * etr + ownfr * self.dt # * trise
+        # print 'ownfr:  ',ownfr
+
+
+    """
+    then ! we use moment!!!!!!!
+    """
        
     def update_total_fpmu_dict(self):
-        """
-        NOTICE!!!!
-        in this case, short-/long-range connections shouldn't share the same connection_distribution key!!!
-        or 
-            for short-range connections, erase previous value at first
-            but for long-range connections, keep previous value in mind!!!
-
-        this drawback may be overcome by deal with short-/long-range statistic properties separately!!!
-            like setting
-                fpmusr
-                fpmulr
-
-        in this code, this drawback was overcome by setting fpmu only consists short range mu
-        
-        """
         # identical for each long-range connection
         # extract parameters
         deltat = self.dt
@@ -884,25 +910,29 @@ class RecurrentPopulation(object):
         """
         no resetting to zero --> go directly to refreshing !!! based on pre-value
         """
-        for c in self.source_connection_list:
-            if (c.conn_type == 'LongRange'):
-                self.total_INMDA_dict[c.connection_distribution] = self.total_INMDA_dict[c.connection_distribution] * etd + self.total_HNMDA_dict[c.connection_distribution] * cst
-                self.total_HNMDA_dict[c.connection_distribution] = self.total_HNMDA_dict[c.connection_distribution] * etr + c.curr_firing_rate * c.nsyn * c.weights * self.tau_r
-
-                print 'Change HNMDA: ', c.curr_firing_rate * c.nsyn ,' \n'
-                print 'Inputlr dict: ', self.total_inputlr_dict[c.connection_distribution]
+        # this type of variables have already been updated in update_NMDA_midvar_syncurr
 
 
 
         # for curr_CD in self.source_connection_list:
         # have already exist
         for c in self.source_connection_list:
-            if(c.conn_type == 'ShortRange'):
-                self.total_fpmu_dict[c.connection_distribution] = 0.0
+           # if(c.conn_type == 'ShortRange'):
+            self.total_fpmu_dict[c.connection_distribution] = 0.0
+            """
+            no matter short-/long-range connections should at first reset to zeros~~~
+            in case not to be distubed by previous result
+            """
         # have already clear up all the short range connections
         for c in self.source_connection_list:
             if(c.conn_type == 'ShortRange'):
                 self.total_fpmu_dict[c.connection_distribution] += c.curr_firing_rate * c.nsyn * c.weights
+                # print 'AMPA: ',c.curr_firing_rate * c.nsyn * c.weights
+            else:
+                self.total_fpmu_dict[c.connection_distribution] += c.curr_Inmda * c.nsyn * c.weights
+                # print 'NMDA: ',c.curr_Inmda * c.nsyn * c.weights
+
+
 
         # summation
         self.total_fp_vslave = 0.0
@@ -913,16 +943,9 @@ class RecurrentPopulation(object):
             except:
                 key.initialize()
                 self.total_fp_vslave += val
-        # and then, summation of Inmda
-        for key,val in self.total_INMDA_dict.items():
-            try:
-                self.total_fp_vslave += val
-            except:
-                key.initialize()
-                self.total_fp_vslave += val
-        # and then divided by gL or multiply tau_m
         self.total_fp_vslave = self.total_fp_vslave * self.tau_m
 
+    
     def update_total_fpsig_dict(self):
         """
         update sigma(variance) for fokker-planck equation
@@ -968,9 +991,12 @@ class RecurrentPopulation(object):
 
         
     def update_ME_moment4(self):
+        self.update_NMDA_midvar_syncurr()
         self.update_total_fpsig_dict()
         self.update_total_fpmu_dict()
         self.update_fp_moment4()
+        # print 'Rec NMDA: ',self.curr_Inmda,self.inmda,' HNMDA: ',self.hnmda
+        print 'vs: ',self.total_fp_vslave ,'ds: ',self.total_fp_sigv
 
         vs = self.total_fp_vslave
         ds = self.total_fp_sigv
@@ -978,10 +1004,13 @@ class RecurrentPopulation(object):
         fin  = self.fin
         gL   = 1.0/self.tau_m
 
+
+        # print 'vs, ds, La0, fin,gL:',vs,ds,La0,fin,gL
         h = self.edges[2]-self.edges[1]
+        # print 'H:',h
         vedges = self.edges
         vedges = 0.5*(vedges[0:-1] + vedges[1:])
-        print 'vslave" ',self.total_fp_vslave,'var: ',self.total_fp_sigv
+        # print 'vslave" ',self.total_fp_vslave,'var: ',self.total_fp_sigv
         rhoEQ,sum_rhoEQ = rho_EQ(self.total_fp_vslave,self.total_fp_sigv,vedges)
         self.rhoEQ      = rhoEQ
         gamma = [1,self.v1,self.v2,self.v3,self.v4]
@@ -992,10 +1021,12 @@ class RecurrentPopulation(object):
         res   = minimize(optfun,a0,args=(tmu,tx,tPEq,tfin,tgamma))
         La1   = res.x
         La0   = np.real(La1)
-     
+        # print 'La1:',La1,'rhoEQ: ',rhoEQ
         rhov   = rhoEQ*np.exp(np.dot(np.squeeze(fin[:,:]),La1))
+        # print 'rho :',rhov
         # normalization
         rhov   = rhov/(h*np.sum(rhov))
+
         firing_rate  = gL*np.sqrt(ds)*np.exp(np.sum(La1))/sum_rhoEQ/2
 
         self.La0 = La0
@@ -1029,6 +1060,12 @@ class RecurrentPopulation(object):
     @property
     def curr_rho_voltage(self):
         return self.rhov
+    @property
+    def curr_Inmda(self):
+        return self.inmda
+    @property
+    def curr_Hnmda(self):
+        return self.hnmda
     @property
     def n_bins(self):
         # number of voltage bins
