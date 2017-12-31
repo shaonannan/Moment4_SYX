@@ -1084,7 +1084,7 @@ def get_simulation(dv=.001,dt=1e-4,tf = 0.1, verbose=False, update_method='exact
     tstep = tf/dt
     s1 = np.zeros(np.int(tstep))
     s2 = np.zeros(np.int(tstep))
-    s1[500:700] = 100
+    s1[500:1000] = 100
     s2[1000:1300] = 000
     s1 += s0
     s2 += s0
@@ -1117,27 +1117,27 @@ def get_simulation(dv=.001,dt=1e-4,tf = 0.1, verbose=False, update_method='exact
     bi1_i01 = Connection(bi1, i01, 1, weights= .058, probs=1.,conn_type = 'ShortRange')
 
     # within column 0 cluster 0
-    e00_e00 = Connection(e00, e00, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i00_e00 = Connection(i00, e00, 128, weights= -.0246, probs=1.,conn_type = 'ShortRange')
-    e00_i00 = Connection(e00, i00, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
+    e00_e00 = Connection(e00, e00, 128, weights= .0204, probs=1.,conn_type = 'ShortRange')
+    i00_e00 = Connection(i00, e00, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e00_i00 = Connection(e00, i00, 128, weights= .0357, probs=1.,conn_type = 'ShortRange')
     i00_i00 = Connection(i00, i00, 128, weights= -.0189, probs=1.,conn_type = 'ShortRange')
 
     # within column 0 cluster 1
-    e01_e01 = Connection(e01, e01, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i01_e01 = Connection(i01, e01, 128, weights= -.0246, probs=1.,conn_type = 'ShortRange')
-    e01_i01 = Connection(e01, i01, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
+    e01_e01 = Connection(e01, e01, 128, weights= .0204, probs=1.,conn_type = 'ShortRange')
+    i01_e01 = Connection(i01, e01, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e01_i01 = Connection(e01, i01, 128, weights= .0357, probs=1.,conn_type = 'ShortRange')
     i01_i01 = Connection(i01, i01, 128, weights= -.0189, probs=1.,conn_type = 'ShortRange')
 
     # between column 0 cluster 0&1
     e00_e01 = Connection(e00, e01, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i00_e01 = Connection(i00, e01, 128, weights= -.0446, probs=1.,conn_type = 'ShortRange')
-    e00_i01 = Connection(e00, i01, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
-    i00_i01 = Connection(i00, i01, 128, weights= -.0289, probs=1.,conn_type = 'ShortRange')
+    i00_e01 = Connection(i00, e01, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e00_i01 = Connection(e00, i01, 128, weights= .0157, probs=1.,conn_type = 'ShortRange')
+    i00_i01 = Connection(i00, i01, 128, weights= -.0489, probs=1.,conn_type = 'ShortRange')
 
     e01_e00 = Connection(e01, e00, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i01_e00 = Connection(i01, e00, 128, weights= -.0446, probs=1.,conn_type = 'ShortRange')
-    e01_i00 = Connection(e01, i00, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
-    i01_i00 = Connection(i01, i00, 128, weights= -.0289, probs=1.,conn_type = 'ShortRange')
+    i01_e00 = Connection(i01, e00, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e01_i00 = Connection(e01, i00, 128, weights= .0157, probs=1.,conn_type = 'ShortRange')
+    i01_i00 = Connection(i01, i00, 128, weights= -.0489, probs=1.,conn_type = 'ShortRange')
 
  
     # column 1
@@ -1150,53 +1150,53 @@ def get_simulation(dv=.001,dt=1e-4,tf = 0.1, verbose=False, update_method='exact
     bi1_i11 = Connection(bi1, i11, 1, weights= .058, probs=1.,conn_type = 'ShortRange')
 
     # within column 1 cluster 0
-    e10_e10 = Connection(e10, e10, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i10_e10 = Connection(i10, e10, 128, weights= -.0246, probs=1.,conn_type = 'ShortRange')
-    e10_i10 = Connection(e10, i10, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
+    e10_e10 = Connection(e10, e10, 128, weights= .0204, probs=1.,conn_type = 'ShortRange')
+    i10_e10 = Connection(i10, e10, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e10_i10 = Connection(e10, i10, 128, weights= .0357, probs=1.,conn_type = 'ShortRange')
     i10_i10 = Connection(i10, i10, 128, weights= -.0189, probs=1.,conn_type = 'ShortRange')
 
     # within column 1 cluster 1
-    e11_e11 = Connection(e11, e11, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i11_e11 = Connection(i11, e11, 128, weights= -.0246, probs=1.,conn_type = 'ShortRange')
-    e11_i11 = Connection(e11, i11, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
+    e11_e11 = Connection(e11, e11, 128, weights= .0204, probs=1.,conn_type = 'ShortRange')
+    i11_e11 = Connection(i11, e11, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e11_i11 = Connection(e11, i11, 128, weights= .0357, probs=1.,conn_type = 'ShortRange')
     i11_i11 = Connection(i11, i11, 128, weights= -.0189, probs=1.,conn_type = 'ShortRange')
 
     # between column 1 cluster 0&1
     e10_e11 = Connection(e10, e11, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i10_e11 = Connection(i10, e11, 128, weights= -.0446, probs=1.,conn_type = 'ShortRange')
-    e10_i11 = Connection(e10, i11, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
-    i10_i11 = Connection(i10, i11, 128, weights= -.0289, probs=1.,conn_type = 'ShortRange')
+    i10_e11 = Connection(i10, e11, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e10_i11 = Connection(e10, i11, 128, weights= .0157, probs=1.,conn_type = 'ShortRange')
+    i10_i11 = Connection(i10, i11, 128, weights= -.0489, probs=1.,conn_type = 'ShortRange')
 
     e11_e10 = Connection(e11, e10, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i11_e10 = Connection(i11, e10, 128, weights= -.0446, probs=1.,conn_type = 'ShortRange')
-    e11_i10 = Connection(e11, i10, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
-    i11_i10 = Connection(i11, i10, 128, weights= -.0289, probs=1.,conn_type = 'ShortRange')
+    i11_e10 = Connection(i11, e10, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e11_i10 = Connection(e11, i10, 128, weights= .0157, probs=1.,conn_type = 'ShortRange')
+    i11_i10 = Connection(i11, i10, 128, weights= -.0489, probs=1.,conn_type = 'ShortRange')
 
     # long-range recurrent connection
-    e00_e10 = Connection(e00, e10, 2.0*128, weights= .0046, probs=1.,conn_type = 'LongRange')
+    e00_e10 = Connection(e00, e10, 2.0*128, weights= .0066, probs=1.,conn_type = 'LongRange')
     e00_i10 = Connection(e00, i10, 2.0*128, weights= .0108, probs=1.,conn_type = 'LongRange')
 
-    e01_e11 = Connection(e01, e11, 2.0*128, weights= .0046, probs=1.,conn_type = 'LongRange')
+    e01_e11 = Connection(e01, e11, 2.0*128, weights= .0066, probs=1.,conn_type = 'LongRange')
     e01_i11 = Connection(e01, i11, 2.0*128, weights= .0108, probs=1.,conn_type = 'LongRange')
 
-    e00_e10s = Connection(e00, e10, 0.5*128, weights= .01248, probs=1.,conn_type = 'ShortRange')
-    e00_i10s = Connection(e00, i10, 0.5*128, weights= .01267, probs=1.,conn_type = 'ShortRange')
+    e00_e10s = Connection(e00, e10, 0.25*128, weights= .00198, probs=1.,conn_type = 'ShortRange')
+    e00_i10s = Connection(e00, i10, 0.25*128, weights= .00207, probs=1.,conn_type = 'ShortRange')
 
-    e01_e11s = Connection(e01, e11, 0.5*128, weights= .01248, probs=1.,conn_type = 'ShortRange')
-    e01_i11s = Connection(e01, i11, 0.5*128, weights= .01267, probs=1.,conn_type = 'ShortRange')
+    e01_e11s = Connection(e01, e11, 0.5*128, weights= .00198, probs=1.,conn_type = 'ShortRange')
+    e01_i11s = Connection(e01, i11, 0.5*128, weights= .00207, probs=1.,conn_type = 'ShortRange')
 
     # long-range recurrent connection
-    e10_e00 = Connection(e10, e00, 2.0*128, weights= .0046, probs=1.,conn_type = 'LongRange')
+    e10_e00 = Connection(e10, e00, 2.0*128, weights= .0066, probs=1.,conn_type = 'LongRange')
     e10_i00 = Connection(e10, i00, 2.0*128, weights= .0108, probs=1.,conn_type = 'LongRange')
 
-    e11_e01 = Connection(e11, e01, 2.0*128, weights= .0046, probs=1.,conn_type = 'LongRange')
+    e11_e01 = Connection(e11, e01, 2.0*128, weights= .0066, probs=1.,conn_type = 'LongRange')
     e11_i01 = Connection(e11, i01, 2.0*128, weights= .0108, probs=1.,conn_type = 'LongRange')
 
-    e10_e00s = Connection(e10, e00, 0.5*128, weights= .01248, probs=1.,conn_type = 'ShortRange')
-    e10_i00s = Connection(e10, i00, 0.5*128, weights= .01267, probs=1.,conn_type = 'ShortRange')
+    e10_e00s = Connection(e10, e00, 0.25*128, weights= .00198, probs=1.,conn_type = 'ShortRange')
+    e10_i00s = Connection(e10, i00, 0.25*128, weights= .00207, probs=1.,conn_type = 'ShortRange')
 
-    e11_e01s = Connection(e11, e01, 0.5*128, weights= .01248, probs=1.,conn_type = 'ShortRange')
-    e11_i01s = Connection(e11, i01, 0.5*128, weights= .01267, probs=1.,conn_type = 'ShortRange')
+    e11_e01s = Connection(e11, e01, 0.25*128, weights= .00198, probs=1.,conn_type = 'ShortRange')
+    e11_i01s = Connection(e11, i01, 0.25*128, weights= .00207, probs=1.,conn_type = 'ShortRange')
 
     
     simulation = Simulation([b0,b1,bi0,bi1,e00,i00,e01,i01,e10,i10,e11,i11], [b0_e00,bi1_i00,b1_e01,bi1_i01,

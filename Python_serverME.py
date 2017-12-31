@@ -235,9 +235,8 @@ def get_zero_bin_list(v):
     
 def leak_matrix(v,tau): # original version (v,tau)
     # knew voltage-edge and design leaky-integrate-and-fire mode
-    
-    zero_bin_ind_list = get_zero_bin_list(v)
-    
+
+    zero_bin_ind_list = get_zero_bin_list(v)   
     # initialize A transmit function for leaky integrate and fire
     A = np.zeros((len(v)-1,len(v)-1))
     
@@ -385,6 +384,11 @@ class ConnectionDistribution(object):
         # mentioned above could be solved
         self.flux_matrix = None
         self.threshold_flux_vector = None
+        self.fluxn_matrix = None
+        self.threshold_fluxn_vector = None
+        self.fluxk_matrix = None
+        self.threshold_fluxk_matrix = None
+        self.nmdajump = None
         # notice that threshold_flux_vector is !!! vector which 
         # could map to each voltage-center
         # self.simulation = None
@@ -405,6 +409,15 @@ class ConnectionDistribution(object):
         curr_threshold_flux_vector,curr_flux_matrix = flux_matrix(self.edges,self.weights,self.probs)
         self.flux_matrix = curr_flux_matrix
         self.threshold_flux_vector = curr_threshold_flux_vector
+        self.fluxn_matrix = np.eye(nv)
+        self.threshold_fluxn_vector = np.zeros(nv)
+
+        self.fluxk_matrix = np.eye(nv)
+        self.threshold_fluxk_vector = np.zeros(nv)
+        curr_threshold_fluxk_vector,curr_fluxk_matrix = flux_matrix(self.edges,self.weights,self.probs)
+        self.fluxk_matrix = curr_fluxk_matrix
+        self.threshold_fluxk_vector = curr_threshold_fluxk_vector
+
 
 
     @property    
@@ -481,7 +494,7 @@ class Connection(object):
         # initialize_firing_rate
     def update_flux_matrix(self,flux_matrix,threshold_flux_matrix):
         self.flux_matrix = flux_matrix
-        self.threshold_fluxt_matrix = threshold_flux_matrix
+        self.threshold_flux_matrix = threshold_flux_matrix
     def update_connection(self,npre,npost,nsyn,**nkwargs):
         self.pre_population = [],
         self.pre_population = npre,
@@ -544,14 +557,14 @@ class ExternalPopulation(object):
         try:
             self.firing_rate = self.firing_rate_stream[np.int(self.curr_t/self.dt)]
         except:
-            self.firing_rate = 100.0
+            self.firing_rate = 0.0
     def update_firing_rate(self):
         self.curr_t = self.simulation.t
         
         try:
             self.firing_rate = self.firing_rate_stream[np.int(self.curr_t/self.dt)]
         except:
-            self.firing_rate = 100.0
+            self.firing_rate = 0.0
         """
         if self.curr_t >0.3:
             temp = 100+50*np.absolute(np.sin(40*self.curr_t))
@@ -575,8 +588,7 @@ class ExternalPopulation(object):
         cst  = 1.0/(tdamp - trise)*(etd - etr) # trise/(tdamp - trise)*(etd - etr)
 
         self.inmda = self.inmda * etd + self.hnmda * cst
-        self.hnmda = self.hnmda *etr + ownfr * self.dt # * trise 
-        print 'release NMDA: ',self.inmda
+        self.hnmda = self.hnmda *etr + ownfr * self.dt
 
     @property
     def curr_firing_rate(self):
@@ -651,6 +663,8 @@ class RecurrentPopulation(object):
         # for long-range connections
         self.tau_r = 0.002
         self.tau_d = 0.108
+
+        self.nmda_vr = 0.0
         
     def initialize(self):
         """
@@ -665,6 +679,8 @@ class RecurrentPopulation(object):
         self.initialize_total_input_dict()
 
         self.initialize_fpmusigv_dict()
+        
+        self.initialize_nmdajump()
 
         
     """
@@ -740,43 +756,6 @@ class RecurrentPopulation(object):
         for ii in zero_bin_list:
             self.rhov[ii] = 1./len(zero_bin_list)
 
-        
-        
-        # initiate moment
-        vedges = self.edges
-        h = vedges[2]-vedges[1]
-        vedges = 0.5*(vedges[0:-1] + vedges[1:])
-        
-        var1   = np.power((5/3/250.0),2)
-        source = np.exp(-np.square(vedges-0.0)/var1/2.0)/np.sqrt(2.0*np.pi*var1)
-        source = source/(h*np.sum(source))
-        self.rhov = source
-        rhovs = self.rhov
-        
-
-        v1 = h*np.sum(vedges*rhovs)
-        v2 = h*np.sum(np.square(vedges)*rhovs)
-        v3 = h*np.sum(np.power(vedges,3.0)*rhovs)
-        v4 = h*np.sum(np.power(vedges,4.0)*rhovs)
-
-        self.v1 = v1
-        self.v2 = v2
-        self.v3 = v3
-        self.v4 = v4
-        gamma   = [1,v1,v2,v3,v4]
-        fi      = np.transpose(gamma)
-        F       = fi[1:3]
-        La0     = np.transpose(gamma[0:3])
-        N       = len(La0)  #3
-        fin     = np.zeros((len(vedges),N))
-        fin[:,0] = np.ones_like(fin[:,0])
-
-        for n in range(1,N):
-            fin[:,n] = vedges*fin[:,n-1]
-
-        # saving self
-        self.La0 = La0
-        self.fin = fin
 
 
     # also combine short-range and long-range input
@@ -795,34 +774,66 @@ class RecurrentPopulation(object):
                     # then have name and signature
                     curr_input = self.total_inputsr_dict.setdefault(c.connection_distribution,0)
                 self.total_inputsr_dict[c.connection_distribution] = curr_input + c.curr_firing_rate * c.nsyn
-                # self.total_input_dict[c.connection_distribution] = curr_input + c.pre_population.curr_firing_rate * c.nsyn
-
-        self.total_inputlr_dict = {}
+        self.total_inputlrk_dict = {}
         for c in self.source_connection_list:
             if(c.conn_type == 'LongRange'):
                 # if already initialize connection_distribution or not
                 try:
-                    curr_input = self.total_inputlr_dict.setdefault(c.connection_distribution,0)
+                    curr_input = self.total_inputlrk_dict.setdefault(c.connection_distribution,0)
                 except:
                     c.initialize_connection_distribution()
                     # then have name and signature
-                    curr_input = self.total_inputlr_dict.setdefault(c.connection_distribution,0)
-                self.total_inputlr_dict[c.connection_distribution] = curr_input + c.curr_Inmda * c.nsyn
-                # self.total_input_dict[c.connection_distribution] = curr_input + c.pre_population.curr_firing_rate * c.nsyn
+                    curr_input = self.total_inputlrk_dict.setdefault(c.connection_distribution,0)
+                self.total_inputlrk_dict[c.connection_distribution] = curr_input +  c.nsyn * c.curr_Inmda
+
+
+    def initialize_nmdajump(self):
+        """
+        long-range connections lift base-voltage, but didn't generate flux!!!
+        """
+        self.nmdakeep_dict = {}
+        self.nmda_dict = {}
+        for c in self.source_connection_list:
+            if(c.conn_type == 'LongRange'):
+                try:
+                    curr_nmdakeep = self.nmdakeep_dict.setdefault(c.connection_distribution,0)
+                except:
+                    c.initialize_connection_ditribution()
+                    curr_nmdakeep = self.nmdakeep_dict.setdefault(C.connection_distribution,0)
+                self.nmdakeep_dict[c.connection_distribution] = curr_nmdakeep 
+
             
     def update_total_flux_matrix(self):
         """
         long-range connections lift base-voltage, but didn't generate flux!!!
         """
+        # update NMDA
         total_flux_matrix = self.leak_flux_matrix.copy()
         # this with Inmda
         for key,val in self.total_inputsr_dict.items():
+            # print 'val: ',val
             try:
                 total_flux_matrix += key.flux_matrix * val
             except:
                 key.initialize()
                 total_flux_matrix += key.flux_matrix * val
+        print 'instan: ',val
+        
+        # sustained variable
+        for key,val in self.total_inputlrk_dict.items():
+            # print 'LR val: ',val
+            try:
+                total_flux_matrix += key.fluxk_matrix * val
+                # print 'FLUX_MATRIX FOR NMDA: ',key.fluxk_matrix
+            except:
+                key.initialize()
+                total_flux_matrix += key.fluxk_matrix * val
+        
+        print 'keep :  ',val
         return total_flux_matrix
+
+
+    
     
     # short range and long rage input
     def update_total_input_dict(self):
@@ -839,13 +850,11 @@ class RecurrentPopulation(object):
         # for long range connections, the input stimuli will change step-by-step as well(base on firing rate of pre-population)
         # but will not immediately change Inmda (as well as hNMDA), because this function only care about total INPUT so, could reset and 
         # refresh step-by-step
-        for curr_CD in self.total_inputlr_dict.keys():
-            self.total_inputlr_dict[curr_CD] = 0.0
+        for curr_CD in self.total_inputlrk_dict.keys():
+            self.total_inputlrk_dict[curr_CD] = 0.0
         for c in self.source_connection_list:
             if (c.conn_type == 'LongRange'):
-                self.total_inputlr_dict[c.connection_distribution] += c.curr_Inmda * c.nsyn
-                # for long-range connection, input dictionary represents slow-changed NMDA-type synaptic input 
-                # both short-/long-range input dictionary do not relate to c.weights
+                self.total_inputlrk_dict[c.connection_distribution] +=  c.nsyn * c.curr_Inmda
 
     def update_prob(self):
         J = self.update_total_flux_matrix()
@@ -862,12 +871,27 @@ class RecurrentPopulation(object):
         
         else:
             raise Exception('Unrecognized population update method: "%s"' % self.update_method)  # pragma: no cover
-        
+        max_loc = np.where(self.rhov==np.amax(self.rhov))
+        self.v1 = self.edges[max_loc[0][0]]
         # we could calculate firing rate here
     def update_firing_rate(self):
         flux_vector = reduce(np.add,[key.threshold_flux_vector * val for key,val in
-                                    self.total_input_dict.items()])
+                                    self.total_inputsr_dict.items()])
+        # have long range or not
+        flag = 0
+        for c in self.source_connection_list:
+            if (c.conn_type == 'LongRange'):
+                flag = 1
+        if (flag==1):
+            
+            fluxk_vector = reduce(np.add,[key.threshold_fluxk_vector * val for key,val in
+                                    self.total_inputlrk_dict.items()])
+            # adding together
+            flux_vector += fluxk_vector
+            
+            
         self.firing_rate = np.dot(flux_vector,self.rhov)
+        print 'firing rate: ',self.firing_rate
 
     # update own hNMDA and iNMDA, which only depends on curr_firing_rate 
     # in another words, a-subpopulation's hNMDA & iNMDA only depend on itself
@@ -885,9 +909,9 @@ class RecurrentPopulation(object):
         cst  = 1.0/(tdamp - trise)*(etd - etr) # trise/(tdamp - trise)*(etd - etr)
 
         self.inmda = self.inmda * etd + self.hnmda * cst
-        self.hnmda = self.hnmda * etr + ownfr * self.dt # * trise
+        self.hnmda = self.hnmda * etr + ownfr  * self.dt
+        print 'release NMDA: ',self.inmda
         # print 'ownfr:  ',ownfr
-
 
     """
     then ! we use moment!!!!!!!
@@ -996,7 +1020,7 @@ class RecurrentPopulation(object):
         self.update_total_fpmu_dict()
         self.update_fp_moment4()
         # print 'Rec NMDA: ',self.curr_Inmda,self.inmda,' HNMDA: ',self.hnmda
-        print 'vs: ',self.total_fp_vslave ,'ds: ',self.total_fp_sigv
+        # print 'vs: ',self.total_fp_vslave ,'ds: ',self.total_fp_sigv
 
         vs = self.total_fp_vslave
         ds = self.total_fp_sigv
@@ -1038,17 +1062,11 @@ class RecurrentPopulation(object):
     # updating function set
     def update(self):
         self.update_total_input_dict()
+        self.update_NMDA_midvar_syncurr()
         self.update_total_flux_matrix()
-        """
-        using !!! moment!!!
-        """
-        if(self.simulation.t>2*self.dt):
-            self.update_ME_moment4()
-        """
-        using SME
         self.update_firing_rate()
         self.update_prob()   
-        """         
+              
 
     @property
     def source_connection_list(self):
@@ -1084,7 +1102,7 @@ def get_simulation(dv=.001,dt=1e-4,tf = 0.1, verbose=False, update_method='exact
     tstep = tf/dt
     s1 = np.zeros(np.int(tstep))
     s2 = np.zeros(np.int(tstep))
-    s1[500:700] = 100
+    s1[5000:10000] = 100
     s2[1000:1300] = 000
     s1 += s0
     s2 += s0
@@ -1117,27 +1135,27 @@ def get_simulation(dv=.001,dt=1e-4,tf = 0.1, verbose=False, update_method='exact
     bi1_i01 = Connection(bi1, i01, 1, weights= .058, probs=1.,conn_type = 'ShortRange')
 
     # within column 0 cluster 0
-    e00_e00 = Connection(e00, e00, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i00_e00 = Connection(i00, e00, 128, weights= -.0246, probs=1.,conn_type = 'ShortRange')
-    e00_i00 = Connection(e00, i00, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
+    e00_e00 = Connection(e00, e00, 128, weights= .0204, probs=1.,conn_type = 'ShortRange')
+    i00_e00 = Connection(i00, e00, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e00_i00 = Connection(e00, i00, 128, weights= .0357, probs=1.,conn_type = 'ShortRange')
     i00_i00 = Connection(i00, i00, 128, weights= -.0189, probs=1.,conn_type = 'ShortRange')
 
     # within column 0 cluster 1
-    e01_e01 = Connection(e01, e01, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i01_e01 = Connection(i01, e01, 128, weights= -.0246, probs=1.,conn_type = 'ShortRange')
-    e01_i01 = Connection(e01, i01, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
+    e01_e01 = Connection(e01, e01, 128, weights= .0204, probs=1.,conn_type = 'ShortRange')
+    i01_e01 = Connection(i01, e01, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e01_i01 = Connection(e01, i01, 128, weights= .0357, probs=1.,conn_type = 'ShortRange')
     i01_i01 = Connection(i01, i01, 128, weights= -.0189, probs=1.,conn_type = 'ShortRange')
 
     # between column 0 cluster 0&1
     e00_e01 = Connection(e00, e01, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i00_e01 = Connection(i00, e01, 128, weights= -.0446, probs=1.,conn_type = 'ShortRange')
-    e00_i01 = Connection(e00, i01, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
-    i00_i01 = Connection(i00, i01, 128, weights= -.0289, probs=1.,conn_type = 'ShortRange')
+    i00_e01 = Connection(i00, e01, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e00_i01 = Connection(e00, i01, 128, weights= .0157, probs=1.,conn_type = 'ShortRange')
+    i00_i01 = Connection(i00, i01, 128, weights= -.0489, probs=1.,conn_type = 'ShortRange')
 
     e01_e00 = Connection(e01, e00, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i01_e00 = Connection(i01, e00, 128, weights= -.0446, probs=1.,conn_type = 'ShortRange')
-    e01_i00 = Connection(e01, i00, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
-    i01_i00 = Connection(i01, i00, 128, weights= -.0289, probs=1.,conn_type = 'ShortRange')
+    i01_e00 = Connection(i01, e00, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e01_i00 = Connection(e01, i00, 128, weights= .0157, probs=1.,conn_type = 'ShortRange')
+    i01_i00 = Connection(i01, i00, 128, weights= -.0489, probs=1.,conn_type = 'ShortRange')
 
  
     # column 1
@@ -1150,53 +1168,53 @@ def get_simulation(dv=.001,dt=1e-4,tf = 0.1, verbose=False, update_method='exact
     bi1_i11 = Connection(bi1, i11, 1, weights= .058, probs=1.,conn_type = 'ShortRange')
 
     # within column 1 cluster 0
-    e10_e10 = Connection(e10, e10, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i10_e10 = Connection(i10, e10, 128, weights= -.0246, probs=1.,conn_type = 'ShortRange')
-    e10_i10 = Connection(e10, i10, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
+    e10_e10 = Connection(e10, e10, 128, weights= .0204, probs=1.,conn_type = 'ShortRange')
+    i10_e10 = Connection(i10, e10, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e10_i10 = Connection(e10, i10, 128, weights= .0357, probs=1.,conn_type = 'ShortRange')
     i10_i10 = Connection(i10, i10, 128, weights= -.0189, probs=1.,conn_type = 'ShortRange')
 
     # within column 1 cluster 1
-    e11_e11 = Connection(e11, e11, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i11_e11 = Connection(i11, e11, 128, weights= -.0246, probs=1.,conn_type = 'ShortRange')
-    e11_i11 = Connection(e11, i11, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
+    e11_e11 = Connection(e11, e11, 128, weights= .0204, probs=1.,conn_type = 'ShortRange')
+    i11_e11 = Connection(i11, e11, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e11_i11 = Connection(e11, i11, 128, weights= .0357, probs=1.,conn_type = 'ShortRange')
     i11_i11 = Connection(i11, i11, 128, weights= -.0189, probs=1.,conn_type = 'ShortRange')
 
     # between column 1 cluster 0&1
     e10_e11 = Connection(e10, e11, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i10_e11 = Connection(i10, e11, 128, weights= -.0446, probs=1.,conn_type = 'ShortRange')
-    e10_i11 = Connection(e10, i11, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
-    i10_i11 = Connection(i10, i11, 128, weights= -.0289, probs=1.,conn_type = 'ShortRange')
+    i10_e11 = Connection(i10, e11, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e10_i11 = Connection(e10, i11, 128, weights= .0157, probs=1.,conn_type = 'ShortRange')
+    i10_i11 = Connection(i10, i11, 128, weights= -.0489, probs=1.,conn_type = 'ShortRange')
 
     e11_e10 = Connection(e11, e10, 128, weights= .0184, probs=1.,conn_type = 'ShortRange')
-    i11_e10 = Connection(i11, e10, 128, weights= -.0446, probs=1.,conn_type = 'ShortRange')
-    e11_i10 = Connection(e11, i10, 128, weights= .0257, probs=1.,conn_type = 'ShortRange')
-    i11_i10 = Connection(i11, i10, 128, weights= -.0289, probs=1.,conn_type = 'ShortRange')
+    i11_e10 = Connection(i11, e10, 128, weights= -.0462, probs=1.,conn_type = 'ShortRange')
+    e11_i10 = Connection(e11, i10, 128, weights= .0157, probs=1.,conn_type = 'ShortRange')
+    i11_i10 = Connection(i11, i10, 128, weights= -.0489, probs=1.,conn_type = 'ShortRange')
 
     # long-range recurrent connection
-    e00_e10 = Connection(e00, e10, 2.0*128, weights= .0046, probs=1.,conn_type = 'LongRange')
+    e00_e10 = Connection(e00, e10, 2.0*128, weights= .0066, probs=1.,conn_type = 'LongRange')
     e00_i10 = Connection(e00, i10, 2.0*128, weights= .0108, probs=1.,conn_type = 'LongRange')
 
-    e01_e11 = Connection(e01, e11, 2.0*128, weights= .0046, probs=1.,conn_type = 'LongRange')
+    e01_e11 = Connection(e01, e11, 2.0*128, weights= .0066, probs=1.,conn_type = 'LongRange')
     e01_i11 = Connection(e01, i11, 2.0*128, weights= .0108, probs=1.,conn_type = 'LongRange')
 
-    e00_e10s = Connection(e00, e10, 0.5*128, weights= .01248, probs=1.,conn_type = 'ShortRange')
-    e00_i10s = Connection(e00, i10, 0.5*128, weights= .01267, probs=1.,conn_type = 'ShortRange')
+    e00_e10s = Connection(e00, e10, 0.25*128, weights= .00198, probs=1.,conn_type = 'ShortRange')
+    e00_i10s = Connection(e00, i10, 0.25*128, weights= .00207, probs=1.,conn_type = 'ShortRange')
 
-    e01_e11s = Connection(e01, e11, 0.5*128, weights= .01248, probs=1.,conn_type = 'ShortRange')
-    e01_i11s = Connection(e01, i11, 0.5*128, weights= .01267, probs=1.,conn_type = 'ShortRange')
+    e01_e11s = Connection(e01, e11, 0.5*128, weights= .00198, probs=1.,conn_type = 'ShortRange')
+    e01_i11s = Connection(e01, i11, 0.5*128, weights= .00207, probs=1.,conn_type = 'ShortRange')
 
     # long-range recurrent connection
-    e10_e00 = Connection(e10, e00, 2.0*128, weights= .0046, probs=1.,conn_type = 'LongRange')
+    e10_e00 = Connection(e10, e00, 2.0*128, weights= .0066, probs=1.,conn_type = 'LongRange')
     e10_i00 = Connection(e10, i00, 2.0*128, weights= .0108, probs=1.,conn_type = 'LongRange')
 
-    e11_e01 = Connection(e11, e01, 2.0*128, weights= .0046, probs=1.,conn_type = 'LongRange')
+    e11_e01 = Connection(e11, e01, 2.0*128, weights= .0066, probs=1.,conn_type = 'LongRange')
     e11_i01 = Connection(e11, i01, 2.0*128, weights= .0108, probs=1.,conn_type = 'LongRange')
 
-    e10_e00s = Connection(e10, e00, 0.5*128, weights= .01248, probs=1.,conn_type = 'ShortRange')
-    e10_i00s = Connection(e10, i00, 0.5*128, weights= .01267, probs=1.,conn_type = 'ShortRange')
+    e10_e00s = Connection(e10, e00, 0.25*128, weights= .00198, probs=1.,conn_type = 'ShortRange')
+    e10_i00s = Connection(e10, i00, 0.25*128, weights= .00207, probs=1.,conn_type = 'ShortRange')
 
-    e11_e01s = Connection(e11, e01, 0.5*128, weights= .01248, probs=1.,conn_type = 'ShortRange')
-    e11_i01s = Connection(e11, i01, 0.5*128, weights= .01267, probs=1.,conn_type = 'ShortRange')
+    e11_e01s = Connection(e11, e01, 0.25*128, weights= .00198, probs=1.,conn_type = 'ShortRange')
+    e11_i01s = Connection(e11, i01, 0.25*128, weights= .00207, probs=1.,conn_type = 'ShortRange')
 
     
     simulation = Simulation([b0,b1,bi0,bi1,e00,i00,e01,i01,e10,i10,e11,i11], [b0_e00,bi1_i00,b1_e01,bi1_i01,
@@ -1211,8 +1229,8 @@ def example(show=True, save=False):
 
     # Settings:
     t0 = 0
-    dt = .0001
-    dv = .001
+    dt = .00001
+    dv = .01
     tf = 0.20
     verbose = True
     update_method = 'approx'
@@ -1227,9 +1245,7 @@ def example(show=True, save=False):
     
     return mm,mu
 
-
-
 mm,mu = example()
-np.save("mm_fr_MOM.npy",mm)
-np.save("mu_vol_MOM.npy",mu)
+np.save("mm_fr.npy",mm)
+np.save("mu_vol.npy",mu)
 

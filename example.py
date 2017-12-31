@@ -26,24 +26,24 @@ background_end = {
 }
 
 internal_population_sizes = {
-    (0, 'e'): 100,
+    (0, 'e'): 300,
     (0, 'i'): 100,
-    (1, 'e'): 100,
+    (1, 'e'): 300,
     (1, 'i'): 100,
-    (2, 'e'): 100,
+    (2, 'e'): 300,
     (2, 'i'): 100,
 }
 
-connection_weightss = {((0,'e'),(0,'e')):.101}
+connection_weightss = {
+    ((0,'e'),(0,'e')):.00234, ((1,'e'),(1,'e')):.00234, ((2,'e'),(2,'e')):.00234, ((3,'e'),(3,'e')):.00234,
+    ((0,'i'),(0,'e')):-.00346, ((1,'i'),(1,'e')):-.00346, ((2,'i'),(2,'e')):-.00346, ((3,'i'),(3,'e')):-.00346, 
+    ((0,'e'),(0,'i')):.00157, ((1,'e'),(1,'i')):.00157, ((2,'e'),(2,'i')):.00157, ((3,'e'),(3,'i')):.00157, 
+    ((0,'i'),(0,'i')):-.00109, ((1,'i'),(1,'i')):-.00109, ((2,'i'),(2,'i')):-.00109, ((3,'i'),(3,'i')):-.00109, 
 
-conn_weights = {
-    'e': .175*1e-3,
-    'i': -.7*1e-3
-}
 
-internal_population_settings = {'v_min': -.03, 
-                                'v_max':.015,
-                                'dv':.0002,
+internal_population_settings = {'v_min': -1.0, 
+                                'v_max': 1.0,
+                                'dv':.001,
                                 'update_method':'approx',
                                 'tol':1e-14,
                                 'tau_m':.01,
@@ -56,17 +56,29 @@ tf = .1
 verbose = True
 save = False
 
+sstm = 90.0
+sbase = 120.0
+
+# Create visual stimuli
+External_stimuli_dict = {}
+for index, celltype in itertools.product([0,1],['bkg']):
+    stm_tmp = np.zeros(np.int(tf/dt))
+    stm_tmp[np.int(background_start[index,celltype]/dt):np.int(background_end[index,celltype]/dt)] = sstm
+    stm_tmp += sbase
+    External_stimuli_dict[index,celltype] = stm_tmp
+
 # Create populations:
 background_population_dict = {}
 internal_population_dict = {}
-for layer, celltype in itertools.product([23, 4, 5, 6], ['e', 'i']):    
-    background_population_dict[layer, celltype] = ExternalPopulation('Heaviside(t)*%s' % background_firing_rate, record=False)
-    internal_population_dict[layer, celltype] = InternalPopulation(**internal_population_settings)
+for index, celltype in itertools.product([0,1], ['bkg']):    
+    background_population_dict[index, celltype] = ExternalPopulation(External_stimuli[index,celltype],dt, record=False)
+for index, celltype in itertools.product([0,1,2,3], ['e','i']):    
+    internal_population_dict[index, celltype] = RecurrentPopulation(dt = dt,v_min=-1.0, v_max=1.0, dv=dv, update_method=update_method, approx_order=approx_order, tol=tol)
 
 # Create background connections:
 connection_list = []
-for layer, celltype in itertools.product([23, 4, 5, 6], ['e', 'i']):
-    source_population = background_population_dict[layer, celltype]
+for index, celltype in itertools.product([0], ['e', 'i']):
+    source_population = background_population_dict[0,'bkg']
     target_population = internal_population_dict[layer, celltype]
     if celltype == 'e':
         background_delay = .005
